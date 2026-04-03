@@ -21,6 +21,68 @@ _HEADERS = {
 }
 
 
+def _clean_title(title: str) -> str:
+    """
+    Cleans page titles by removing redundant branding artifacts.
+    Logic:
+    1. Splits on common separators: | / - · —
+    2. If the last segment is a case-insensitive repeat of an earlier segment, strip it.
+    3. Handles multiple repetitions (e.g., Brand / Brand / Brand).
+    """
+    if not title:
+        return ""
+
+    # Normalize backslashes to forward slashes first
+    title = title.replace("\\", "/").strip()
+
+    # Pattern for splitting while keeping the separators
+    # Separators: | / - · —
+    separators = r"[|/\-·—]"
+    parts = re.split(f"(\s*{separators}\s*)", title)
+    
+    if len(parts) <= 1:
+        return title
+
+    segments = []
+    seps = []
+    for i, part in enumerate(parts):
+        if i % 2 == 0:
+            segments.append(part.strip())
+        else:
+            seps.append(part)
+
+    # Deduplicate from the end
+    while len(segments) > 1:
+        last_segment = segments[-1].lower()
+        if not last_segment:
+            segments.pop()
+            if seps: seps.pop()
+            continue
+            
+        is_repeat = False
+        for i in range(len(segments) - 1):
+            prev_segment = segments[i].lower()
+            if not prev_segment: continue
+            # Check for exact match or if the brand is already in the main title
+            if last_segment == prev_segment or last_segment in prev_segment:
+                is_repeat = True
+                break
+        
+        if is_repeat:
+            segments.pop()
+            if seps: seps.pop()
+        else:
+            break
+
+    # Reconstruct with original separators
+    res = segments[0]
+    for i in range(len(seps)):
+        if i + 1 < len(segments):
+            res += f"{seps[i]}{segments[i+1]}"
+            
+    return res.strip()
+
+
 async def scrape_page(url: str) -> PageData:
     try:
         async with httpx.AsyncClient(follow_redirects=True, timeout=10.0, verify=False) as client:
@@ -42,7 +104,7 @@ async def scrape_page(url: str) -> PageData:
         og_title = soup.find("meta", property="og:title")
         title = (title_tag.get_text(strip=True) if title_tag
                  else (og_title.get("content", "") if og_title else ""))
-        title = title.replace("\\", "/").strip()
+        title = _clean_title(title)
 
         # Meta description
         desc = soup.find("meta", attrs={"name": "description"})

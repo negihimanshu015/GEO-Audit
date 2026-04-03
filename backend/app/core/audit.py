@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from app.services.scraper import scrape_page, ScrapingError
 from app.core.schema_rules import detect_schema_type
 from app.services.llm import generate_json_ld
-from app.models.response import AuditResponse
+from app.models.response import AuditResponse, GeoNote
 
 
 def _generate_geo_notes(
@@ -13,32 +13,56 @@ def _generate_geo_notes(
     author_found: bool,
     date_found: bool,
     social_links: list[str],
-) -> list[str]:
-    notes: list[str] = []
+) -> list[GeoNote]:
+    notes: list[GeoNote] = []
 
     if not meta_description:
-        notes.append("No meta description found — add one for better AI snippet coverage.")
+        notes.append(GeoNote(
+            message="No meta description found — add one for better AI snippet coverage.",
+            severity="warning"
+        ))
 
     h1_count = sum(1 for h in headings if h.lower().startswith("h1:"))
     if h1_count < 1:
-        notes.append("No H1 detected — help AI engines identify your primary entity with a clear H1.")
+        notes.append(GeoNote(
+            message="No H1 detected — help AI engines identify your primary entity with a clear H1.",
+            severity="critical"
+        ))
     elif h1_count > 1:
-        notes.append("Multiple H1 tags found — ensure the primary H1 clearly states the organization name.")
+        notes.append(GeoNote(
+            message="Multiple H1 tags found — ensure the primary H1 clearly states the organization name.",
+            severity="critical"
+        ))
 
     if detected_schema_type in ("Article", "BlogPosting", "NewsArticle"):
         if not author_found:
-            notes.append("No author found on page — add visible author markup for AI citation trust.")
+            notes.append(GeoNote(
+                message="No author found on page — add visible author markup for AI citation trust.",
+                severity="critical"
+            ))
         if not date_found:
-            notes.append("No publish date detected — add a visible date for temporal relevance scoring.")
+            notes.append(GeoNote(
+                message="No publish date detected — add a visible date for temporal relevance scoring.",
+                severity="critical"
+            ))
 
     if len([h for h in headings if "?" in h]) >= 2 and detected_schema_type != "FAQPage":
-        notes.append("Multiple question headings detected — consider adding FAQ schema for natural language query coverage.")
+        notes.append(GeoNote(
+            message="Multiple question headings detected — consider adding FAQ schema for natural language query coverage.",
+            severity="warning"
+        ))
 
     if not social_links:
-        notes.append("No entity links found — link to your LinkedIn, Wikipedia, or Wikidata profile via sameAs.")
+        notes.append(GeoNote(
+            message="No entity links found — link to your LinkedIn, Wikipedia, or Wikidata profile via sameAs.",
+            severity="warning"
+        ))
 
     if not canonical_url:
-        notes.append("No canonical URL tag detected — add one to establish a stable citation source for AI engines.")
+        notes.append(GeoNote(
+            message="No canonical URL tag detected — add one to establish a stable citation source for AI engines.",
+            severity="warning"
+        ))
 
     return notes
 

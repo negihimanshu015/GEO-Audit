@@ -12,6 +12,10 @@ class PageData(BaseModel):
     date_found: bool = False
     social_links: List[str] = []
 
+class GeoNote(BaseModel):
+    message: str
+    severity: str  
+
 class AuditResponse(BaseModel):
     """
     Serialized response for a GEO audit.
@@ -20,5 +24,5 @@ class AuditResponse(BaseModel):
     page_data: PageData
     detected_schema_type: str
     json_ld: Dict[str, Any]
-    geo_notes: List[str]
+    geo_notes: List[GeoNote]
     audit_timestamp: datetime
