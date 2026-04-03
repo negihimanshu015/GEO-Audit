@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     
     ALLOWED_ORIGINS: Union[List[str], str] = Field(default_factory=list)
     APP_PORT: int = Field(default=8000, ge=1024, le=65535)
+    RATE_LIMIT: str = Field(default="10 per minute")
 
     @field_validator("ALLOWED_ORIGINS", mode="before")
     @classmethod
