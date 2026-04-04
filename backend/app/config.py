@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     """
     
     GEMINI_API_KEY: str = Field(default="")
+    GEMINI_MODEL: str = Field(default="gemini-2.5-flash")
+    
     
     ALLOWED_ORIGINS: Union[List[str], str] = Field(default_factory=list)
     APP_PORT: int = Field(default=8000, ge=1024, le=65535)

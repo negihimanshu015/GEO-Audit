@@ -89,7 +89,7 @@ async def generate_json_ld(
     meta_description: str | None,
     headings: list[str],
 ) -> dict:
-    """Call Gemini to produce a JSON-LD block; fall back to a minimal template on any failure."""
+    """Call LLM to produce a JSON-LD block; fall back to a minimal template on any failure."""
     settings = get_settings()
 
     if not settings.GEMINI_API_KEY:
@@ -105,7 +105,7 @@ async def generate_json_ld(
         import asyncio
         response = await asyncio.to_thread(
             client.models.generate_content,
-            model="gemini-2.5-flash", 
+            model=settings.GEMINI_MODEL, 
             contents=prompt
         )
         raw = response.text
