@@ -21,6 +21,11 @@ def _generate_geo_notes(
             message="No meta description found — add one for better AI snippet coverage.",
             severity="warning"
         ))
+    else:
+        notes.append(GeoNote(
+            message="Meta description present",
+            severity="info"
+        ))
 
     h1_count = sum(1 for h in headings if h.lower().startswith("h1:"))
     if h1_count < 1:
@@ -32,6 +37,11 @@ def _generate_geo_notes(
         notes.append(GeoNote(
             message="Multiple H1 tags found — ensure the primary H1 clearly states the organization name.",
             severity="critical"
+        ))
+    else:
+        notes.append(GeoNote(
+            message="Structured headings present",
+            severity="info"
         ))
 
     if detected_schema_type in ("Article", "BlogPosting", "NewsArticle"):
@@ -57,11 +67,21 @@ def _generate_geo_notes(
             message="No entity links found — link to your LinkedIn, Wikipedia, or Wikidata profile via sameAs.",
             severity="warning"
         ))
+    else:
+        notes.append(GeoNote(
+            message="Social profile detected",
+            severity="info"
+        ))
 
     if not canonical_url:
         notes.append(GeoNote(
             message="No canonical URL tag detected — add one to establish a stable citation source for AI engines.",
             severity="warning"
+        ))
+    else:
+        notes.append(GeoNote(
+            message="Canonical URL detected",
+            severity="info"
         ))
 
     return notes
@@ -90,6 +110,13 @@ async def run_audit(url: str) -> AuditResponse:
 
     if "@type" in json_ld:
         detected_schema_type = str(json_ld["@type"])
+
+    # Inject detected social links into the schema for better entity linkage
+    if page_data.social_links:
+        json_ld["sameAs"] = list(dict.fromkeys(
+            (json_ld.get("sameAs") if isinstance(json_ld.get("sameAs"), list) else [json_ld["sameAs"]] if "sameAs" in json_ld else []) + 
+            page_data.social_links
+        ))
 
     geo_notes = _generate_geo_notes(
         meta_description=page_data.meta_description,

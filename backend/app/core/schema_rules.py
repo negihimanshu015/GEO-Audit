@@ -21,16 +21,12 @@ def detect_schema_type(
     meta_description: Optional[str],
     headings: list[str],
 ) -> str:
-    """Score keyword groups against page text and URL path; return the winning schema type.
-
-    Prioritizes URIs (homepages/blogs) before keyword scoring.
-    Falls back to 'Organization' when no group reaches a score of 1.
-    """
+    """Score keyword groups against page text and URL path; return the winning schema type."""
     parsed = urlparse(url)
     path = parsed.path.lower().strip("/")    
     
     if not path:
-        return "Organization"  
+        return "Organization"
     
     if any(p in path for p in ["blog", "news", "articles"]):
         return "Article"

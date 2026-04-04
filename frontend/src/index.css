@@ -14,7 +14,7 @@
   }
 
   .stamp {
-    @apply border-4 border-double border-stamp-red text-stamp-red px-4 py-2 -rotate-12 inline-block font-bold uppercase opacity-80;
+    @apply border-4 border-double border-stamp-red text-stamp-red px-4 py-2 inline-block font-bold uppercase opacity-80;
   }
 
   .grid-bg {

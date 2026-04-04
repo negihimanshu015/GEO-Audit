@@ -23,9 +23,6 @@ export async function runAudit(url: string): Promise<AuditResponse> {
     return response.json()
 }
 
-/**
- * Checks the health of the backend API.
- */
 export async function getHealth(): Promise<{ status: string }> {
     const response = await fetch(`${API_BASE_URL}/health`)
     if (!response.ok) throw new Error('API health check failed')

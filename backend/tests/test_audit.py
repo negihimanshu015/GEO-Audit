@@ -4,7 +4,7 @@ from app.core.audit import run_audit
 from app.services.llm import generate_json_ld
 from app.models.response import PageData
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_run_audit_logic():
     mock_page_data = PageData(
         title="Test Page",
@@ -26,7 +26,7 @@ async def test_run_audit_logic():
             assert response.json_ld == mock_json_ld
             assert len(response.geo_notes) > 0
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_llm_fallback_mechanism():
     url = "https://fail.com"
     schema_type = "Article"

@@ -3,13 +3,13 @@ from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone
 from app.models.response import AuditResponse, PageData
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_health_check(async_client):
     response = await async_client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_perform_audit_endpoint(async_client):
     mock_response = AuditResponse(
         url="https://example.com",

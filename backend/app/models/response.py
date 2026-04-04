@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 from datetime import datetime
 
 class PageData(BaseModel):
@@ -14,7 +14,7 @@ class PageData(BaseModel):
 
 class GeoNote(BaseModel):
     message: str
-    severity: str  
+    severity: Literal["critical", "warning", "info"]
 
 class AuditResponse(BaseModel):
     """

@@ -19,15 +19,35 @@ export default function JsonLdViewer({ json }: JsonLdViewerProps) {
     }
   }
 
+  const downloadJson = () => {
+    const blob = new Blob([jsonString], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'schema.json'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="edge-border bg-white overflow-hidden relative group">
       {isAvailable && (
-        <button
-          onClick={copyToClipboard}
-          className="absolute top-2 right-2 px-3 py-1 bg-ink text-parchment text-[10px] typewriter uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity hover:bg-zinc-700 z-10"
-        >
-          {copied ? 'Copied!' : 'Copy'}
-        </button>
+        <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+          <button
+            onClick={copyToClipboard}
+            className="px-3 py-1 bg-ink text-parchment text-[10px] typewriter uppercase tracking-widest hover:bg-zinc-700 transition-colors"
+          >
+            {copied ? 'Copied!' : 'Copy'}
+          </button>
+          <button
+            onClick={downloadJson}
+            className="px-3 py-1 bg-ink text-parchment text-[10px] typewriter uppercase tracking-widest hover:bg-zinc-700 transition-colors"
+          >
+            Download
+          </button>
+        </div>
       )}
       
       {isAvailable ? (

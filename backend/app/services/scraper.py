@@ -1,18 +1,14 @@
-import httpx
-import logging
 import re
+import copy
+import logging
+import httpx
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 from app.models.response import PageData
 
 logger = logging.getLogger(__name__)
 
-
-class ScrapingError(Exception):
-    def __init__(self, message: str):
-        self.message = message
-        super().__init__(message)
-
+# Constants
 
 _HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -20,75 +16,208 @@ _HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 
+_SOCIAL_PATTERNS: dict[str, list[str]] = {
+    "linkedin":  ["linkedin.com/in/", "linkedin.com/company/"],
+    "x_twitter": ["twitter.com/", "x.com/"],
+    "wikipedia": ["wikipedia.org/wiki/"],
+    "wikidata":  ["wikidata.org/wiki/"],
+}
 
-def _clean_title(title: str) -> str:
-    """
-    Cleans page titles by removing redundant branding artifacts.
-    Logic:
-    1. Splits on common separators: | / - · —
-    2. If the last segment is a case-insensitive repeat of an earlier segment, strip it.
-    3. Handles multiple repetitions (e.g., Brand / Brand / Brand).
-    """
+_IMG_MAX = 5
+_IMG_MIN_SIZE = 10  
+
+# Custom Exception
+
+class ScrapingError(Exception):
+    pass
+
+# Private Helpers
+
+def _brand_from_url(url: str) -> str | None:
+    """Extract the primary domain name to use as a brand hint."""
+    parts = urlparse(url).netloc.split(".")
+    if len(parts) < 2:
+        return None
+    brand = parts[-2]
+    # Skip 'www' and step back one level
+    if brand == "www" and len(parts) >= 3:
+        brand = parts[-3]
+    return brand
+
+
+def _clean_title(title: str, brand_hint: str | None = None) -> str:
+    """Remove trailing brand/duplicate segments from a page title."""
     if not title:
         return ""
-
-    # Normalize backslashes to forward slashes first
     title = title.replace("\\", "/").strip()
 
-    # Pattern for splitting while keeping the separators
-    # Separators: | / - · —
-    separators = r"[|/\-·—]"
-    parts = re.split(f"(\s*{separators}\s*)", title)
-    
-    if len(parts) <= 1:
-        return title
+    # Split on common title separators, keeping the separators
+    parts = re.split(r"(\s*[|/\-·—:]\s*)", title)
+    segments = [p.strip() for p in parts[0::2]]  # even indices = content
+    seps     = parts[1::2]                        # odd  indices = separators
 
-    segments = []
-    seps = []
-    for i, part in enumerate(parts):
-        if i % 2 == 0:
-            segments.append(part.strip())
-        else:
-            seps.append(part)
-
-    # Deduplicate from the end
+    # Drop trailing segments that repeat an earlier one or match the brand
     while len(segments) > 1:
-        last_segment = segments[-1].lower()
-        if not last_segment:
-            segments.pop()
-            if seps: seps.pop()
+        last = segments[-1].lower()
+        if not last:
+            segments.pop(); seps and seps.pop()
             continue
-            
-        is_repeat = False
-        for i in range(len(segments) - 1):
-            prev_segment = segments[i].lower()
-            if not prev_segment: continue
-            # Check for exact match or if the brand is already in the main title
-            if last_segment == prev_segment or last_segment in prev_segment:
-                is_repeat = True
-                break
-        
+        is_repeat = (brand_hint and last == brand_hint.lower()) or any(
+            prev.lower() and (last == prev.lower() or last in prev.lower())
+            for prev in segments[:-1]
+        )
         if is_repeat:
-            segments.pop()
-            if seps: seps.pop()
+            segments.pop(); seps and seps.pop()
         else:
             break
 
-    # Reconstruct with original separators
-    res = segments[0]
-    for i in range(len(seps)):
+    result = segments[0]
+    for i, sep in enumerate(seps):
         if i + 1 < len(segments):
-            res += f"{seps[i]}{segments[i+1]}"
-            
-    return res.strip()
+            result += f"{sep}{segments[i + 1]}"
+    return result.strip()
 
+
+def _clean_heading(text: str) -> str:
+    """Collapse whitespace and remove exact string/word-level repetition."""
+    text = re.sub(r'\s+', ' ', text).strip()
+    prev = None
+    while text != prev:
+        prev = text
+        n = len(text)
+        # Character-level repetition (e.g. "abab" → "ab")
+        for i in range(1, n // 2 + 1):
+            if n % i == 0 and text[:i] * (n // i) == text:
+                text = text[:i].strip()
+                break
+        # Word-level repetition (e.g. "foo bar foo bar" → "foo bar")
+        words = text.split()
+        half = len(words) // 2
+        if len(words) >= 2 and len(words) % 2 == 0 and words[:half] == words[half:]:
+            text = " ".join(words[:half])
+    return text
+
+
+def _clean_social_url(href: str) -> str:
+    """Strip anchors, query params, trailing slashes, and normalise @ handles."""
+    href = href.split("#")[0].split("?")[0].rstrip("/")
+    return href.replace("/@", "/")
+
+
+# Extraction Functions
+
+def _extract_title(soup: BeautifulSoup, brand_hint: str | None) -> str:
+    tag = soup.find("title")
+    og  = soup.find("meta", property="og:title")
+    raw = tag.get_text(strip=True) if tag else (og.get("content", "") if og else "")
+    return _clean_title(raw, brand_hint=brand_hint)
+
+
+def _extract_meta_description(soup: BeautifulSoup) -> str | None:
+    meta = soup.find("meta", attrs={"name": "description"})
+    og   = soup.find("meta", property="og:description")
+    if meta:
+        return meta.get("content", "").strip() or None
+    return og.get("content", "") if og else None
+
+
+def _extract_headings(soup: BeautifulSoup) -> list[str]:
+    headings = []
+    for tag in soup.find_all(["h1", "h2", "h3"]):
+        if tag.find_parent(["nav", "header", "footer", "aside"]):
+            continue
+        clone = copy.copy(tag)
+        for hidden in clone.find_all(attrs={"aria-hidden": "true"}): hidden.decompose()
+        for hidden in clone.find_all(attrs={"hidden": True}):        hidden.decompose()
+        text = _clean_heading(clone.get_text(" ", strip=True).replace("¶", ""))
+        if text:
+            headings.append(f"{tag.name}: {text}")
+    return headings
+
+
+def _score_image(img, src: str) -> int:
+    """Heuristic score: higher = more likely to be a meaningful image."""
+    tag_id    = (img.get("id")    or "").lower()
+    tag_class = " ".join(img.get("class") or []).lower()
+    src_lower = src.lower()
+    if "logo"   in (tag_id + tag_class + src_lower): return 10
+    if any(k in (tag_id + tag_class + src_lower) for k in ("hero", "banner")): return 8
+    return 0
+
+
+def _extract_images(soup: BeautifulSoup, url: str) -> list[str]:
+    candidates: list[tuple[int, str]] = []
+
+    # High-priority meta tags
+    og = soup.find("meta", property="og:image")
+    if og and og.get("content"):
+        candidates.append((15, urljoin(url, og["content"])))
+
+    tw = soup.find("meta", attrs={"name": "twitter:image"})
+    if tw and tw.get("content"):
+        candidates.append((12, urljoin(url, tw["content"])))
+
+    # Inline <img> tags
+    for img in soup.find_all("img"):
+        src = img.get("src", "")
+        if not src or src.startswith("data:"):
+            continue
+        try:
+            if int(img.get("width", _IMG_MIN_SIZE)) < _IMG_MIN_SIZE: continue
+            if int(img.get("height", _IMG_MIN_SIZE)) < _IMG_MIN_SIZE: continue
+        except ValueError:
+            pass
+        candidates.append((_score_image(img, src), urljoin(url, src)))
+
+    # Sort, deduplicate, and cap
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    seen, images = set(), []
+    for _, img_url in candidates:
+        if img_url not in seen:
+            images.append(img_url)
+            seen.add(img_url)
+        if len(images) == _IMG_MAX:
+            break
+    return images
+
+
+def _extract_social_links(soup: BeautifulSoup) -> list[str]:
+    found: dict[str, str] = {}
+    for a in soup.find_all("a", href=True):
+        href = _clean_social_url(a["href"]).lower()
+        for platform, patterns in _SOCIAL_PATTERNS.items():
+            if platform not in found and any(p in href for p in patterns):
+                found[platform] = _clean_social_url(a["href"])
+                break
+    return list(found.values())
+
+
+def _check_metadata_presence(soup: BeautifulSoup) -> tuple[bool, bool]:
+    """Return (author_found, date_found)."""
+    author = bool(
+        soup.find("meta", attrs={"name": "author"}) or
+        soup.find("meta", property="article:author") or
+        soup.find("a", rel="author") or
+        soup.find(class_=re.compile(r"author|byline", re.I)) or
+        soup.find(id=re.compile(r"author|byline", re.I))
+    )
+    date = bool(
+        soup.find("meta", property="article:published_time") or
+        soup.find("meta", attrs={"name": "publish-date"}) or
+        soup.find("time", datetime=True) or
+        soup.find(class_=re.compile(r"date|published|time", re.I))
+    )
+    return author, date
+
+# Public API 
 
 async def scrape_page(url: str) -> PageData:
+    brand_hint = _brand_from_url(url)
+
     try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=10.0, verify=False) as client:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=10.0) as client:
             r = await client.get(url, headers=_HEADERS)
             r.raise_for_status()
-            
             if str(r.url).rstrip("/") != url.rstrip("/"):
                 logger.info(f"Redirected to: {r.url}")
     except httpx.HTTPStatusError as e:
@@ -98,117 +227,18 @@ async def scrape_page(url: str) -> PageData:
 
     try:
         soup = BeautifulSoup(r.text, "html.parser")
-
-        # Title extraction and cleaning
-        title_tag = soup.find("title")
-        og_title = soup.find("meta", property="og:title")
-        title = (title_tag.get_text(strip=True) if title_tag
-                 else (og_title.get("content", "") if og_title else ""))
-        title = _clean_title(title)
-
-        # Meta description
-        desc = soup.find("meta", attrs={"name": "description"})
-        og_desc = soup.find("meta", property="og:description")
-        meta_description = (desc.get("content", "").strip() if desc
-                            else (og_desc.get("content", "") if og_desc else None))
-
-        # Headings (H1–H3)
-        headings = [
-            f"{tag.name}: {tag.get_text(strip=True).replace('¶', '').strip()}"
-            for tag in soup.find_all(["h1", "h2", "h3"])
-            if tag.get_text(strip=True) and not tag.find_parent(["nav", "header", "footer", "aside"])
-        ]
-
-        # Image extraction
-        meta_images = []
-        og_img = soup.find("meta", property="og:image")
-        if og_img and og_img.get("content"):
-            meta_images.append(urljoin(url, og_img["content"]))
-            
-        twitter_img = soup.find("meta", attrs={"name": "twitter:image"})
-        if twitter_img and twitter_img.get("content"):
-            meta_images.append(urljoin(url, twitter_img["content"]))
-
-        scored_images = []
-        for img in soup.find_all("img"):
-            src = img.get("src", "")
-            if not src or src.startswith("data:"):
-                continue
-                
-            try:
-                if int(img.get("width", 10)) < 10 or int(img.get("height", 10)) < 10:
-                    continue
-            except ValueError:
-                pass
-                
-            full_src = urljoin(url, src)
-            
-            # Priority scoring based on IDs, classes, and src
-            score = 0
-            tag_id = (img.get("id") or "").lower()
-            tag_class = " ".join(img.get("class") or []).lower()
-            src_lower = src.lower()
-            
-            if "logo" in tag_id or "logo" in tag_class or "logo" in src_lower:
-                score += 10
-            elif "hero" in tag_id or "hero" in tag_class or "hero" in src_lower or "banner" in src_lower:
-                score += 8
-                
-            scored_images.append((score, full_src))
-
-        scored_images.sort(key=lambda x: x[0], reverse=True)
-        
-        images = []
-        seen = set()
-        for img_url in meta_images + [img[1] for img in scored_images]:
-            if img_url not in seen:
-                images.append(img_url)
-                seen.add(img_url)
-            if len(images) == 5:
-                break
-
-        canonical_tag = soup.find("link", rel="canonical")
-        canonical_url = canonical_tag.get("href") if canonical_tag else None
-
-        author_found = any([
-            soup.find("meta", attrs={"name": "author"}),
-            soup.find("meta", property="article:author"),
-            soup.find("a", rel="author"),
-            soup.find(class_=re.compile("author|byline", re.I)),
-            soup.find(id=re.compile("author|byline", re.I))
-        ])
-
-        date_found = any([
-            soup.find("meta", property="article:published_time"),
-            soup.find("meta", attrs={"name": "publish-date"}),
-            soup.find("time", datetime=True),
-            soup.find(class_=re.compile("date|published|time", re.I)),
-        ])
-
-        # Extract LinkedIn, X, Wikipedia, or Wikidata links
-        social_links = []
-        social_patterns = [
-            "linkedin.com/in/", "linkedin.com/company/",
-            "twitter.com/", "x.com/",
-            "wikipedia.org/wiki/", "wikidata.org/wiki/"
-        ]
-        for a in soup.find_all("a", href=True):
-            href = a["href"]
-            if any(p in href.lower() for p in social_patterns):
-                social_links.append(href)
-        
-        social_links = list(dict.fromkeys(social_links))[:10]
+        canonical = soup.find("link", rel="canonical")
+        author_found, date_found = _check_metadata_presence(soup)
 
         return PageData(
-            title=title or "No Title Found",
-            meta_description=meta_description,
-            headings=headings,
-            image_urls=images,
-            canonical_url=canonical_url,
-            author_found=bool(author_found),
-            date_found=bool(date_found),
-            social_links=social_links
+            title=_extract_title(soup, brand_hint),
+            meta_description=_extract_meta_description(soup),
+            headings=_extract_headings(soup),
+            image_urls=_extract_images(soup, url),
+            canonical_url=canonical.get("href") if canonical else None,
+            author_found=author_found,
+            date_found=date_found,
+            social_links=_extract_social_links(soup),
         )
-
     except Exception as e:
         raise ScrapingError(f"Parse error: {e}")

@@ -2,9 +2,6 @@ import pytest
 from httpx import AsyncClient, ASGITransport
 from main import app
 
-@pytest.fixture(scope="session")
-def anyio_backend():
-    return "asyncio"
 
 @pytest.fixture
 async def async_client():

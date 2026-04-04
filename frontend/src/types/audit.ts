@@ -11,7 +11,7 @@ export interface PageData {
 
 export interface GeoNote {
   message: string
-  severity: 'warning' | 'critical'
+  severity: 'warning' | 'critical' | 'info'
 }
 
 export interface AuditResponse {

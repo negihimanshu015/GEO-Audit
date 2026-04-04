@@ -102,8 +102,9 @@ async def generate_json_ld(
         
         prompt = _build_prompt(url, schema_type, title, meta_description, headings)
         
-        # Call using the new models.generate_content method
-        response = client.models.generate_content(
+        import asyncio
+        response = await asyncio.to_thread(
+            client.models.generate_content,
             model="gemini-2.5-flash", 
             contents=prompt
         )

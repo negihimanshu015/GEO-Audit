@@ -33,13 +33,13 @@ export default function AuditResult({ result, loading }: AuditResultProps) {
       {/* Left Column: Metadata & Structure */}
       <div className="md:col-span-2 space-y-8">
         {result && <PageSummaryCard data={result.page_data} />}
-        
+
         <div className="edge-border p-6 bg-white/30">
           <h2 className="typewriter text-2xl border-b border-zinc-400 pb-2 mb-4 uppercase tracking-tighter">
-            Structure: Heading Hierarchy
+            Heading Hierarchy
           </h2>
           <ul className="space-y-2 font-mono text-sm">
-            {result?.page_data.headings.map((heading, i) => (
+            {[...new Set(result?.page_data.headings || [])].map((heading, i) => (
               <li key={i} className="flex gap-3 leading-tight border-b border-zinc-200 pb-1 last:border-0 hover:bg-zinc-100/50 transition-colors">
                 <span className="opacity-50 shrink-0 select-none">[{String(i + 1).padStart(2, '0')}]</span>
                 <span className="break-words">{heading}</span>
@@ -56,14 +56,19 @@ export default function AuditResult({ result, loading }: AuditResultProps) {
           <div className="text-3xl font-bold border-4 border-ink p-4 inline-block mb-2 typewriter tracking-tighter bg-white shadow-[2px_2px_0px_var(--color-ink)]">
             {result?.detected_schema_type || 'UNKNOWN'}
           </div>
-          <p className="text-[10px] uppercase font-bold tracking-widest mt-2">Detected Subject Category</p>
         </div>
 
         <div className="edge-border p-5 bg-ink text-parchment space-y-4">
           <h3 className="typewriter uppercase text-sm tracking-widest border-b border-zinc-600 pb-2">Technical Flags</h3>
           <div className="space-y-2">
-            <TechnicalFlag label="Author Validated" value={result?.page_data.author_found} />
-            <TechnicalFlag label="Chronology Found" value={result?.page_data.date_found} />
+            {(result?.detected_schema_type === 'Article' ||
+              result?.detected_schema_type === 'BlogPosting' ||
+              result?.detected_schema_type === 'NewsArticle') && (
+                <>
+                  <TechnicalFlag label="Author Validated" value={result?.page_data.author_found} />
+                  <TechnicalFlag label="Chronology Found" value={result?.page_data.date_found} />
+                </>
+              )}
             <TechnicalFlag label="Social Footprint" value={(result?.page_data.social_links.length || 0) > 0} />
             <TechnicalFlag label="Canonical Match" value={!!result?.page_data.canonical_url} />
           </div>
@@ -73,7 +78,7 @@ export default function AuditResult({ result, loading }: AuditResultProps) {
       {/* Full Width Section: JSON-LD Viewer */}
       <div className="md:col-span-3 space-y-4">
         <h3 className="typewriter text-xl uppercase tracking-widest border-b-2 border-ink inline-block pb-1">
-          Schema.org JSON-LD
+          JSON-LD
         </h3>
         {result && <JsonLdViewer json={result.json_ld} />}
       </div>

@@ -35,7 +35,7 @@ function App() {
           <div className="text-right self-end md:self-start min-h-[1.5rem]">
             {result && (
               <p className="text-xs font-bold uppercase animate-in fade-in duration-500">
-                Timestamp: {new Date().toISOString()}
+                Timestamp: {new Date(result.audit_timestamp).toLocaleString()}
               </p>
             )}
           </div>
@@ -54,19 +54,34 @@ function App() {
           <AuditResult result={result} loading={loading} />
         </section>
 
-        {result?.geo_notes && result.geo_notes.length > 0 && (
+        {result && (
           <footer className="mt-16 edge-border p-8 bg-white/40 animate-in fade-in slide-in-from-bottom-4 duration-700">
             <h2 className="typewriter text-2xl mb-6 uppercase tracking-tighter border-b-2 border-ink inline-block pb-1">
               GEO-Notes
             </h2>
             <div className="space-y-4 max-w-3xl">
+              {/* Success Banner if no critical/warning notes */}
+              {result.geo_notes.every(n => n.severity === 'info') && (
+                <div className="mb-8 p-6 border-2 border-emerald-500/30 bg-emerald-500/5 edge-border flex items-center gap-4 animate-in zoom-in duration-500">
+                  <span className="text-2xl text-emerald-600">✓</span>
+                  <div>
+                    <p className="typewriter text-lg font-bold text-emerald-800 tracking-wider">PAGE IS GEO-READY</p>
+                    <p className="text-[10px] uppercase font-mono text-emerald-600 opacity-70">Structural verification successful</p>
+                  </div>
+                </div>
+              )}
+
               {result.geo_notes.map((note, idx) => (
                 <p
                   key={idx}
-                  className={`p-4 border-l-4 bg-white/20 italic text-sm animate-in fade-in slide-in-from-left-4 duration-500 shadow-sm ${note.severity === 'critical' ? 'border-red-600' : 'border-amber-500'
+                  className={`p-4 border-l-4 italic text-sm animate-in fade-in slide-in-from-left-4 duration-500 shadow-sm ${note.severity === 'critical' ? 'border-red-600 bg-red-50 text-red-900' :
+                    note.severity === 'warning' ? 'border-amber-500 bg-amber-50 text-amber-900' :
+                      'border-emerald-500 bg-emerald-50/50 text-emerald-900'
                     }`}
                 >
-                  "{note.message}"
+                  {note.severity === 'info' ? '✓ ' : '"'}
+                  {note.message}
+                  {note.severity !== 'info' && '"'}
                 </p>
               ))}
             </div>
